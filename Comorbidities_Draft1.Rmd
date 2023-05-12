@@ -1,0 +1,845 @@
+---
+title: "Comorbidities_Draft1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Reading the data
+```{r }
+rm(list = ls())
+
+setwd("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/extraction_and_recoding/outputs")
+ukb_extracted <- readRDS("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/extraction_and_recoding/outputs/ukb_extracted.rds")
+output_final <- readRDS("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/outcome_definition/Outputs/output_final.rds")
+```
+
+
+# Combining the 2 dataframes
+
+```{r }
+
+participants = rownames(output_final)
+output_final = cbind(participants, output_final)
+participants2 = rownames(ukb_extracted)
+ukb_extracted = cbind(participants2 , ukb_extracted)
+
+joined_df <- output_final %>% 
+  left_join(ukb_extracted, by = c("participants" = "participants2"))
+dim (joined_df)
+#View(head(joined_df))
+
+joined_df = joined_df %>% select(-(participants))
+
+#Removing prevalent cases 
+prevalent_removed <- joined_df%>%
+  filter(prevalent_case == 0)
+nrow(prevalent_removed)
+
+
+# the NAs were because of the prevalent cases
+# Incidenct_NA_rmvd <- prevalent_removed%>%
+#   filter(is.na(incident_case) != T)
+# nrow(Incidenct_NA_rmvd)
+
+df = prevalent_removed
+
+```
+
+# Loading the libraries
+```{r }
+library(table1)
+library(dplyr)
+library(hash)
+library(knitr)
+library(vtable)
+library(tidyverse)
+library(gtsummary)
+library(ggplot2)
+```
+
+# Selecting the instances 0.0
+```{r }
+# variables = grep(pattern=".0.0",x=names(ukb_extracted),value=TRUE)
+# selection = ukb_extracted[, variables]
+# dim(selection)
+# 
+# # class(selection)
+# View(head(selection))
+# View (ukb_extracted)
+# # View(selection)
+```
+
+# Checking the ICD10 codes
+
+```{r }
+# sum(selection$`Diagnoses_-_ICD10.0.0`=="")
+# class(selection$`Diagnoses_-_ICD10.0.0`=="")
+# head(selection$`Diagnoses_-_ICD10.0.0`=="")
+# 
+# subset2 = subset(selection, selection$`Diagnoses_-_ICD10.0.0`=="")
+# 
+# View(head(subset2))
+# dim(subset2)
+# 
+# sum(selection$`Diagnoses_-_ICD10.0.242`=="")
+# nrow(selection)
+# 
+# mycols <- subset2 %>% select(matches("ICD"))
+# dim(mycols)
+# View(head(mycols))
+# 
+# missing_vals <- mycols %>% summarise_all(funs(sum(. == "")))
+# sum(missing_vals)
+# View(missing_vals)
+```
+
+
+# Making a copy of the dataframe
+```{r }
+#df = selection[1:100000,]
+# df = selection
+# 
+# dim(df)
+
+```
+
+# Creating a data frame for the ICD10, ICD9 and fields 20002, 20003 codes only
+
+```{r }
+# ICD10_DF
+ICD10_cols =grep ("ICD10", names(df))
+ICD10_data = df [, ICD10_cols]
+
+#View(head(SR_data))
+
+#ICD9_DF
+ICD9_cols =grep ("ICD9", names(df))
+ICD9_data = df [, ICD9_cols]
+
+#SR DF
+SR_cols =grep ("Non-cancer_illness_code,_self-reported", names(df))
+SR_data = df[, SR_cols]
+
+#Treatment and Medication DF
+TM_cols =grep ("Treatment/medication_code_diag", names(df))
+TM_data = df [, TM_cols]
+
+#Illness of father DF
+IF_cols =grep ("Illnesses_of_father", names(df))
+IF_data = df [, IF_cols]
+
+#Illness of mother DF
+IM_cols =grep ("Illnesses_of_mother", names(df))
+IM_data =df [, IM_cols]
+
+#Illness of siblings DF
+IS_cols =grep ("Illnesses_of_siblings", names(df))
+IS_data = df [, IS_cols]
+
+#Medication for cholesterol, blood pressure, or diabetes DF
+MCBP_cols =grep ("Medication_for_cholesterol,_blood_pressure_or_diabetes", names(df))
+MCBP_data = df [, MCBP_cols]
+
+#Medication for cholesterol, blood pressure, or diabetes or take exogenous hormones DF
+MCBPEH_cols =grep ("Medication_for_cholesterol,_blood_pressure_or_diabetes", names(df))
+MCBPEH_data = df [, MCBPEH_cols]
+
+# Operation codes
+
+OPCS_cols =grep ("Operative_procedures", names(df))
+OPCS_data = df [, OPCS_cols]
+
+
+#Creating a dataframe that will containe the variables of comorbidities
+df2 = subset(df, select= c(eid, incident_case))
+
+
+
+```
+
+
+# Atrial Fibrillation
+
+```{r }
+# Create a list of ICD 10s to search for
+AF_ICDs <- c("I48")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_AF_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(AF_ICDs, collapse = "|"), x)), 1, 0)
+})
+table(df$has_AF_icd10)
+
+
+#Selecting from the ICD-9 column
+
+# Atrial Fibrillation
+# list of ICD-9 to match
+ICD9_AF <- c("4273","4270")
+
+# create has_AF column if they have the disease
+df$has_AF_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_AF, collapse = "|"), x)), 1, 0)
+})
+table(df$has_AF_icd9)
+# Selecting from The self-reported data-field from the data field 20002
+SR_AF = c("1471","1483")
+df$has_AF_SR = apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_AF, collapse = "|"), x)), 1, 0)
+})
+
+
+# Selecting from the OPCS-4
+# Create a list of ICD 10s to search for
+AF_OPCS <- c("K622", "K623")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_AF_opcs <- apply(OPCS_data, 1, function(x) {
+  ifelse(any(grepl(paste(AF_OPCS, collapse = "|"), x)), 1, 0)
+})
+
+
+
+
+
+df2$has_AF <- rowSums(df[, c("has_AF_icd10", "has_AF_icd9", "has_AF_SR", "has_AF_opcs")])
+df2$com_has_AF <- ifelse(df2$has_AF > 0, 1, df2$has_AF)
+#View(df2)
+#table(df2$incident_case, df2$has_AF)
+
+
+
+
+
+
+```
+# cpode for table
+```{r }
+
+
+table_AF <- vtable(df2,stats = c("Count", "Percent"),vars = c("incident_case", "has_AF"))
+# Print the resulting table
+
+print(table_AF)
+contingency_table <- table(df2$incident_case, df2$has_AF)
+table_AF <- as.table(contingency_table)
+dimnames(table_AF) <- list(incident_case = c("0", "1"),
+ has_AF = c("0", "1", "2", "3"))
+table_AF
+class(table_AF)
+table_df <- as.data.frame(table_AF)
+
+# Create ggplot table
+table_plot <- ggplot(table_df, aes(x = incident_case, y = has_AF, fill = Count)) + 
+  geom_tile() +  
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+# Save table as PNG image
+ggsave("table.png", table_plot, width = 8, height = 6, dpi = 300)
+getwd()
+
+# Create table with sum and percentage using tbl_summary for certain variables
+
+table1 <- tbl_summary(df2[, c("incident_case", "has_AF")]) %>%
+
+
+  add_n() %>%
+
+
+
+  modify_header(n = "**Count**") 
+
+ 
+
+# Print the resulting table
+
+table1
+
+```
+
+# Migraine
+
+```{r }
+# Create a list of ICDs to search for
+Migraine_ICDs <- c("G43", "G440", "N943")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_migraine_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(Migraine_ICDs, collapse = "|"), x)), 1, 0)
+})
+
+
+#Selecting from the ICD-9 column
+
+# Migraine
+# list of ICD-9 to match
+ICD9_migraine <- c("346")
+
+# create has_AF column if they have the disease
+df$has_migraine_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_migraine, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_migraine = c("1265")
+df$has_migraine_SR = apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_migraine, collapse = "|"), x)), 1, 0)
+})
+
+table(df$has_migraine_icd10)
+table(df$has_migraine_icd9)
+table(df$has_migraine_SR)
+
+df2$has_migraine <- rowSums(df[, c("has_migraine_icd10", "has_migraine_icd9", "has_migraine_SR")])
+df2$com_has_migraine <- ifelse(df2$has_migraine > 0, 1, df2$has_migraine)
+#View(df2)
+#table(df2$incident_case, df2$has_migraine)
+
+
+# table1 <- tbl_summary(df2[, c("incident_case", "has_migraine")]) %>%
+#   add_n() %>%
+#  modify_header(n = "**Count**") 
+# 
+# # Print the resulting table
+# 
+# table1
+```
+# Removing unneeded object
+```{r }
+
+rm(joined_df, AF_ICDs, AF_OPCS, ICD9_AF, ICD9_cols, ICD9_migraine, participants, participants2, SR_AF, SR_migraine)
+
+```
+
+# Type 1 diabetes
+
+```{r }
+# Create a list of ICDs to search for
+t1d_ICDs <- c("E10", "O230")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_t1d_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(t1d_ICDs, collapse = "|"), x)), 1, 0)
+})
+
+
+#Selecting from the ICD-9 column
+
+# Type 1 diabetes
+# list of ICD-9 to match
+ICD9_t1d <- c("25001", "25011", "25021", "25031", "25041", "25051",
+              "25061", "25071", "25081", "25091", "25003", "25013", 
+              "25023", "25033", "25043", "25053", "25063", "25073", 
+              "25083", "25093")
+
+# create has_t1d column if they have the disease
+df$has_t1d_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_t1d, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_t1d = c("1222")
+df$has_t1d_SR = apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_t1d, collapse = "|"), x)), 1, 0)
+})
+
+table(df$has_t1d_icd10)
+table(df$has_t1d_icd9)
+table(df$has_t1d_SR)
+
+df2$has_t1d <- rowSums(df[, c("has_t1d_icd10", "has_t1d_icd9", "has_t1d_SR")])
+df2$com_has_t1d <- ifelse(df2$has_t1d > 0, 1, df2$has_t1d)
+# View(df2)
+# table(df2$incident_case, df2$has_t1d)
+# table1 <- tbl_summary(df2[, c("incident_case", "has_t1d")]) %>%
+#   add_n() %>%
+#  modify_header(n = "**Count**") 
+# 
+# # Print the resulting table
+# 
+# table1
+
+
+```
+
+
+
+# Type 2 diabetes
+
+```{r }
+# list of ICD 10
+t2d_codes <- c("E11", "O231")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_t2d_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(t2d_codes, collapse = "|"), x)), 1, 0)
+})
+# list of ICD-9 to match
+ICD9_t2d <- c("25000", "25010", "25020", "25030", "25040", "25050",
+              "25060", "25070", "25080", "25090", "25002", "25012", 
+              "25022", "25032", "25042", "25052", "25062", "25072", 
+              "25082", "25092")
+
+# create has_t2d column if they have the disease
+df$has_t2d_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_t2d, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_t2d = c("1223","1220")
+df$has_t2d_SR =  apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_t2d, collapse = "|"), x)), 1, 0)
+})
+
+
+#Selecting the treatment and medication code from the data field 20003
+TM_t2d = c("1140868902", "1140874646", "1140874674", "1140874718", 
+          "1140874744", "1140883066", "1140884600", "1141152590", 
+          "1141157284", "1141168660", "1141171646", "1141173882", 
+          "1141189090" )
+df$has_t2d_TM = apply(TM_data, 1, function(x) {
+  ifelse(any(grepl(paste(TM_t2d, collapse = "|"), x)), 1, 0)
+})
+
+# if in field 2443
+
+
+df$has_t2d_2443 <- ifelse(df$Diabetes_diag_bio.0.0 ==1, 1,0)
+
+#table(df$has_t2d_icd10)
+table(df$has_t2d_icd9)
+table(df$has_t2d_SR)
+table(df$has_t2d_TM)
+#table(df$has_t2d_2443)
+
+df2$has_t2d <- rowSums(df[, c("has_t2d_icd10", "has_t2d_icd9", "has_t2d_SR", "has_t2d_TM","has_t2d_2443" )])
+df2$com_has_t2d <- ifelse(df2$has_t2d > 0, 1, df2$has_t2d)
+
+# View(df2)
+# table(df2$incident_case, df2$has_t2d)
+# 
+# table1 <- tbl_summary(df2[, c("incident_case", "has_t2d")]) %>%
+#   add_n() %>%
+#  modify_header(n = "**Count**") 
+# 
+# # Print the resulting table
+# 
+# table1
+saveRDS(df2, file = "comorbidities.rds")
+
+
+
+```
+
+```{r }
+rm(ICD9_t1d, ICD9_t2d, ICD9_AF, ICD9_migraine, Migraine_ICDs, t1d_ICDs, t2d_codes)
+
+```
+
+
+# Chonic kidney disease
+
+```{r }
+#list of ICD 10
+ckd_icd10_codes <- c("N183", "N184", "N185")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_ckd_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(ckd_icd10_codes, collapse = "|"), x)), 1, 0)
+})
+
+# list of ICD-9 to match
+ICD9_ckd <- c("5853", "5954", "5855")
+
+# create has_t2d column if they have the disease
+df$has_ckd_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_ckd, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_ckd = c("1192","1193")
+df$has_ckd_SR =  apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_ckd, collapse = "|"), x)), 1, 0)
+})
+
+
+#table(df$has_ckd_icd10)
+table(df$has_ckd_icd9)
+table(df$has_ckd_SR)
+
+df2$has_ckd <- rowSums(df[, c("has_ckd_icd10", "has_ckd_icd9", "has_ckd_SR" )])
+df2$com_has_ckd <- ifelse(df2$has_ckd > 0, 1, df2$has_ckd)
+# View(df2)
+# table(df2$incident_case, df2$has_ckd)
+# 
+# table1 <- tbl_summary(df2[, c("incident_case", "has_ckd")]) %>%
+#   add_n() %>%
+#  modify_header(n = "**Count**") 
+# 
+# # Print the resulting table
+# 
+# table1
+
+```
+
+
+
+# Rheumathoid arthrisis
+
+```{r }
+# ICD10
+ra_icd10_codes <- c("M05", "M06")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_ra_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(ra_icd10_codes, collapse = "|"), x)), 1, 0)
+})
+
+# list of ICD-9 to match
+ICD9_RA <- c("714")
+
+# create has_t2d column if they have the disease
+df$has_RA_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_RA, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_RA = c("1464")
+df$has_RA_SR =  apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_RA, collapse = "|"), x)), 1, 0)
+})
+
+
+
+#table(df$has_RA_icd10)
+table(df$has_RA_icd9)
+table(df$has_RA_SR)
+
+
+
+df2$has_RA<- rowSums(df[, c("has_ra_icd10", "has_RA_icd9", "has_RA_SR" )])
+df2$com_has_RA <- ifelse(df2$has_RA > 0, 1, df2$has_RA)
+#View(df2)
+# table(df$incident_case, df2$has_RA)
+
+
+
+# 
+# table1 <- tbl_summary(df2[, c("incident_case", "has_RA")]) %>%
+#   add_n() %>%
+#  modify_header(n = "**Count**") 
+# 
+# # Print the resulting table
+# 
+# table1
+
+```
+
+# Systemic lupus erythematosus
+
+```{r }
+#ICD10
+sle_icd10_codes <- c("M32")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_sle_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(sle_icd10_codes, collapse = "|"), x)), 1, 0)
+})
+
+# list of ICD-9 to match
+ICD9_sle <- c("7100")
+
+# create has_t2d column if they have the disease
+df$has_sle_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_sle, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_sle = c("1381")
+df$has_sle_SR =  apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_sle, collapse = "|"), x)), 1, 0)
+})
+
+
+
+#table(df$has_sle_icd10)
+table(df$has_sle_icd9)
+table(df$has_sle_SR)
+#
+
+df2$has_sle <- rowSums(df[, c("has_sle_icd10", "has_sle_icd9", "has_sle_SR" )])
+df2$com_has_sle <- ifelse(df2$has_sle > 0, 1, df2$has_sle)
+# View(df2)
+# table(df2$incident_case, df2$has_sle)
+saveRDS(df2, file = "comorbidities.rds")
+```
+```{r }
+rm(prevalent_removed, ckd_icd10_codes, ICD9_ckd,ICD9_RA, ICD9_sle, ra_icd10_codes, sle_icd10_codes, SR_ckd, SR_AF)
+
+```
+
+# Severe Mental Illness
+
+```{r }
+#ICD10
+psychiatric_icd10_codes <- c("F03", "F068", "F09", "F20", 
+                             "F22", "F23", "F259", "F28",
+                             "F29", "F31", "F39", "F53", "F333")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_psychiatric_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(psychiatric_icd10_codes, collapse = "|"), x)), 1, 0)
+})
+
+# list of ICD-9 to match
+ICD9_psychiatric <- c("295", "298", "296")
+
+# create has_t2d column if they have the disease
+df$has_psychiatric_icd9 = apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_psychiatric, collapse = "|"), x)), 1, 0)
+})
+
+# Selecting from The self-reported data-field from the data field 20002
+SR_psychiatric = c("1289","1291")
+df$has_psychiatric_SR =  apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_psychiatric, collapse = "|"), x)), 1, 0)
+})
+
+
+
+#table(df$has_psychiatric_icd10)
+table(df$has_psychiatric_icd9)
+table(df$has_psychiatric_SR)
+#
+df2$has_psychiatric <- rowSums(df[, c("has_psychiatric_icd10", "has_psychiatric_icd9", "has_psychiatric_SR" )])
+df2$com_has_psychiatric <- ifelse(df2$has_psychiatric > 0, 1, df2$has_psychiatric)
+#View(df2)
+#table(df2$incident_case, df2$has_psychiatric)
+
+```
+
+
+
+# Erectile Dysfunction
+
+```{r }
+#ICD10
+
+erectile_dysfunction_icd10_codes <- c("N484", "N52")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_ED_icd10 <- apply(ICD10_data, 1, function(x) {
+  ifelse(any(grepl(paste(erectile_dysfunction_icd10_codes, collapse = "|"), x)), 1, 0)
+})
+
+
+
+
+# Erectile dysfunction ICD9
+ICD9_ED <- c("60784")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_ED_icd9<- apply(ICD9_data, 1, function(x) {
+  ifelse(any(grepl(paste(ICD9_ED, collapse = "|"), x)), 1, 0)
+})
+
+
+# Erectile dysfunction self reported
+SR_ED<- c("1518")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_ED_SR <- apply(SR_data, 1, function(x) {
+  ifelse(any(grepl(paste(SR_ED, collapse = "|"), x)), 1, 0)
+})
+
+
+#### 20003 medications`
+# Erectile dysfunction
+
+# Erectile dysfunction medications
+erectile_dysfunction_meds_20003 <- c("1141168936",
+"1141168948", "1141168944", "1141168946", "1140869100", "1140883010")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$has_ED_meds20003 <- apply(TM_data, 1, function(x) {
+  ifelse(any(grepl(paste(erectile_dysfunction_meds_20003, collapse = "|"), x)), 1, 0)
+})
+
+
+
+df2$has_ED <- rowSums(df[, c("has_ED_icd10", "has_ED_icd9", "has_ED_SR", "has_ED_meds20003" )])
+df2$com_has_ED <- ifelse(df2$has_ED > 0, 1, df2$has_ED)
+# View(df2)
+# table(df2$incident_case, df2$has_ED)
+
+```
+
+#CAD in a 1st degree relative
+
+```{r }
+#ILness in father
+IF_CAD<- c("1")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$IF_CAD <- apply(IF_data, 1, function(x) {
+  ifelse(any(grepl(paste(IF_CAD, collapse = "|"), x)), 1, 0)
+})
+
+#ILness in mother
+IM_CAD<- c("1")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$IM_CAD <- apply(IM_data, 1, function(x) {
+  ifelse(any(grepl(paste(IM_CAD, collapse = "|"), x)), 1, 0)
+})
+
+#ILness in SIBLINGS
+IS_CAD<- c("1")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$IS_CAD <- apply(IS_data, 1, function(x) {
+  ifelse(any(grepl(paste(IS_CAD, collapse = "|"), x)), 1, 0)
+})
+
+df2$herit_CAD <- rowSums(df[, c("IF_CAD", "IM_CAD", "IS_CAD")])
+df2$com_herit_CAD <- ifelse(df2$herit_CAD > 0, 1, df2$herit_CAD)
+# View(df2)
+# table(df2$incident_case, df2$herit_CAD)
+saveRDS(df2, file = "comorbidities.rds")
+
+```
+# Atypical antipsychotic
+
+```{r }
+###### Atypical antipsychotic medication
+antipsychotic_meds_20003 <- c("1140867420", "1140867444", "1140927956",
+                              "1140928916", "1141152848", "1141153490",
+                              "1141169714", "1141195974")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$antipsychotic_meds_20003 <- apply(TM_data, 1, function(x) {
+  ifelse(any(grepl(paste(antipsychotic_meds_20003, collapse = "|"), x)), 1, 0)
+})
+
+table(df$antipsychotic_meds_20003)
+
+df2$antipsychotic <- df$antipsychotic_meds_20003
+df2$com_antipsychotic <- ifelse(df2$antipsychotic > 0, 1, df2$antipsychotic)
+# View(df2)
+# table(df2$incident_case, df2$antipsychotic)
+
+```
+
+# steroids meds
+```{r }
+steroid_meds_20003 <- c("1140874790", "1140874816", "1140874896.00",
+                        "1140874930", "1140874976", "1141145782", 
+                        "1141173346")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$steroid_meds_20003 <- apply(TM_data, 1, function(x) {
+  ifelse(any(grepl(paste(steroid_meds_20003, collapse = "|"), x)), 1, 0)
+})
+
+table(df$steroid_meds_20003)
+
+df2$com_steroid <- df$steroid_meds_20003
+
+# View(df2)
+# table(df2$incident_case, df2$steroid)
+saveRDS(df2, file = "comorbidities.rds")
+
+```
+
+
+# Lipid lowering meds
+
+```{r }
+
+#  Lipid Lowering meds
+lipid_lowering_meds_20003 <- c("1140861954",
+                              "1140861958", "1140888594",
+                              "1140888648", "1141146234", 
+                              "1141192410", "1141192736")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$lipid_lowering_meds_20003 <- apply(TM_data, 1, function(x) {
+  ifelse(any(grepl(paste(lipid_lowering_meds_20003, collapse = "|"), x)), 1, 0)
+})
+
+table(df$lipid_lowering_meds_20003)
+
+df2$com_lipid_lowering <- df$lipid_lowering_meds_20003
+# View(df2)
+# table(df2$incident_case, df2$lipid_lowering)
+
+```
+
+
+# Blood pressure lowering medication
+```{r }
+
+bp_meds_20003 <- c("1140860192", "1140860292", "1140860696", "1140860728",
+                   "1140860750", "1140860806", "1140860882", "1140860904", 
+                   "1140861088", "1140861190", "1140861276", "1140866072", 
+                   "1140866078", "1140866090", "1140866102", "1140866108",
+                   "1140866122", "1140866138", "1140866156", "1140866162",
+                   "1140866724", "1140866738", "1140868618", "1140872568",
+                   "1140874706", "1140874744", "1140875808", "1140879758", 
+                   "1140879760", "1140879762", "1140879802", "1140879806",
+                   "1140879810", "1140879818", "1140879822", "1140879826",
+                   "1140879830", "1140879834", "1140879842", "1140879866", 
+                   "1140884298", "1140888552", "1140888556", "1140888560", 
+                   "1140888646", "1140909706", "1140910442", "1140910614", 
+                   "1140916356", "1140923272", "1140923336", "1140923404", 
+                   "1140923712", "1140926778", "1140928226", "1141145660", 
+                   "1141146126", "1141152998", "1141153026", "1141164276", 
+                   "1141165470", "1141166006", "1141169516", "1141171336", 
+                   "1141180592", "1141180772", "1141180778", "1141184722", 
+                   "1141193282", "1141194794", "1141194810")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$bp_meds_20003 <- apply(TM_data, 1, function(x) {
+  ifelse(any(grepl(paste(bp_meds_20003, collapse = "|"), x)), 1, 0)
+})
+
+table(df$bp_meds_20003)
+
+# if in field 6177
+
+MCBP_bp_meds<- c("2")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$MCBP_bp_meds_6177 <- apply(MCBP_data, 1, function(x) {
+  ifelse(any(grepl(paste(MCBP_bp_meds, collapse = "|"), x)), 1, 0)
+})
+# if in field 6153
+
+BPMC_bp_meds<- c("2")
+
+# Add a new column that represents whether a row contains any string from the list of fruits
+df$MCBPEH_bp_meds_6153 <- apply(MCBPEH_data, 1, function(x) {
+  ifelse(any(grepl(paste(BPMC_bp_meds, collapse = "|"), x)), 1, 0)
+})
+
+df2$bp = rowSums(df[, c("bp_meds_20003", "MCBP_bp_meds_6177", "MCBPEH_bp_meds_6153" )])
+df2$com_bp <- ifelse(df2$bp > 0, 1, df2$bp)
+
+# View(df2)
+# table(df2$incident_case, df2$bp)
+
+saveRDS(df2, file = "comorbidities.rds")
+getwd()
+
+```
+
+
+# WE ADDED 1 IN BP because 1 refers to lipid lowering medications!!!!
+Elliot J, Bodinier B, Bond TA, et al. Predictive accuracy of a polygenic risk score–
+enhanced prediction model vs a clinical risk score for coronary artery disease. 
+JAMA. doi:10.1001/jama.2019.22241 
+

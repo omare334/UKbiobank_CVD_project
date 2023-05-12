@@ -1,0 +1,417 @@
+
+
+## "Data For Imputation"
+
+
+# Loading the libraries
+
+rm(list = ls())
+library(tableone)
+library(table1)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(RColorBrewer)
+library(pheatmap)
+
+
+# Reading the data
+
+#The loaded in files involve the intiial dataframes extracted from uk biobank
+## for privacy reasons the extraction process will not be detailed
+###ukb_extracted is the extracted dataframe witht the variables that are selected
+####for analysis.
+
+
+
+setwd("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/extraction_and_recoding/outputs")
+ukb_extracted <- readRDS("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/extraction_and_recoding/outputs/ukb_extracted.rds")
+output_final <- readRDS("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/outcome_definition/Outputs/output_final.rds")
+comorbidities <- readRDS("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/FINAL_SCRIPTS/comorbidities.rds")
+
+#prs data to evaluate genetic risk for CVD 
+prs_69328 <- readRDS("/rds/general/user/rw1317/projects/hda-22-23/live/TDS/General/Data/prs_69328.rds")
+
+
+
+
+# Combining the 2 dataframes and adding the PRS column
+
+
+participants = rownames(output_final)
+output_final = cbind(participants, output_final)
+participants2 = rownames(ukb_extracted)
+ukb_extracted2 = cbind(participants2 , ukb_extracted)
+
+joined_df <- output_final %>% 
+  left_join(ukb_extracted2, by = c("participants" = "participants2"))
+
+#View(head(joined_df))
+
+joined_df = joined_df %>% select(-(participants))
+
+#Removing prevalent cases 
+prevalent_removed <- joined_df%>%
+  filter(prevalent_case == 0)
+
+
+
+# the NAs were because of the prevalent cases and this code can show this 
+Incidenct_NA_rmvd <- prevalent_removed%>%
+  filter(is.na(incident_case) != T)
+
+
+df = prevalent_removed
+#rmeoving the object so the data frame so the workspace stays clean
+rm(Incidenct_NA_rmvd, prevalent_removed, ukb_extracted, ukb_extracted2, participants, participants2, output_final, joined_df)
+
+# adding the PRS code
+polygenic_score = data.frame(eid = names(prs_69328), PRS = prs_69328, row.names = NULL)
+df <- merge(df , polygenic_score, by = "eid")
+
+
+# Removing the variables associated with the comorbidities 
+
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "Operative_procedures")))
+
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "ICD10")))
+
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "ICD9")))
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "Cancer_code,_self-reported")))
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "Non-cancer_illness_code,_self-reported")))
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "Treatment/medication_code_diag")))
+
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "Illnesses_of")))
+df <- df %>%
+  select(-which(sapply(names(df), grepl, pattern = "Medication_for_cholesterol")))
+
+
+#removing the negative variables , here we remove variables that are coded as 
+##negative numbers 
+
+
+
+df_rep = df
+dim(df_rep)
+df_rep = df_rep %>% select (-c(Townsend_deprivation_index_at_recruitment_env.0.0))
+#function to replace -3s in the df
+replace_neg_three <- function(df) {
+  df[df == -3] <- NA
+  return(df)
+}
+df_rep = replace_neg_three (df_rep)
+
+
+
+# function to replace the -7 in the df
+replace_neg_seven <- function(df) {
+  df[df == -7] <- 0
+  return(df)
+}
+df_rep = replace_neg_seven (df_rep)
+# function to replace the -7 in the df
+replace_neg_one <- function(df) {
+  df[df == -1] <- NA
+  return(df)
+}
+df_rep = replace_neg_one (df_rep)
+
+#-6 it varies recorded as yes as it means yes 
+df_rep$MealsAndAlc_env.0.0 <- replace(df_rep$MealsAndAlc_env.0.0, 
+                                      df_rep$MealsAndAlc_env.0.0
+                                      == -6, 1)
+
+# function to replace the -10 in the df
+replace_neg_ten <- function(df) {
+  df[df == -10] <- 1
+  return(df)
+}
+df_rep = replace_neg_ten (df_rep)
+
+
+# Removing the variables with people who did not asnwer to more than 25 percent 
+## of the questions
+
+df_rep = df_rep %>% select (-c(  "Age_high_blood_pressure_diagnosed.0.0"
+))
+
+# Removing the food variables that were added
+df_rep  <- df_rep%>%
+  select(-which(sapply(names(df_rep), grepl, pattern = "HLS")))
+
+df_rep$Townsend_deprivation_index_at_recruitment_env.0.0 = df$Townsend_deprivation_index_at_recruitment_env.0.0
+
+#str(df_rep)
+#View(head(df_rep))
+#str(df_rep)
+
+
+
+
+#Converting the variables to their type where factors are converted to factors
+## and numeric variables are converted to numeric 
+
+#converting the numeric varaibles to numeric using as.numeric
+my_data <- df_rep %>% mutate_at(vars("case", "prevalent_case", "incident_case", "Sex.0.0","Number_of_days/week_of_moderate_physical_activity_10+_minutes_.0.0", 
+                                     "Frequency_of_friend/family_visits.0.0","Time_spent_outdoors_in_winter.0.0","Time_spend_outdoors_in_summer.0.0","Sleep_duration_env.0.0", 
+                                     "Alcohol_env.0.0","Current_tobacco_smoking_env.0.0", "Past_tobacco_smoking.0.0","Smoking_status_env.0.0", "smokers_in_household_env.0.0",
+                                     "diet_variation_env.0.0","MealsAndAlc_env.0.0","Alcohol_intake_versus_10_years_previously_env.0.0","Country_of_birth_env.0.0",
+                                     "Maternal_smoking_around_birth_env.0.0","Smoking_status_env.0.0","Ever_smoked_env.0.0",
+                                     "Ethnic_background_env.0.0","Close_to_major_road_env.0.0"),as.factor) %>%mutate_at(vars("time_to_diagnosis", "TobaccoExposure_home_env.0.0","TobaccoExposure_outside_env.0.0","Diastolic_blood_pressure,_automated_reading_diag.0.0",
+                                                                                                                             "Diastolic_blood_pressure,_automated_reading_diag.0.1","Systolic_blood_pressure,_automated_reading_diag.0.0", 
+                                                                                                                             "Systolic_blood_pressure,_automated_reading_diag.0.1","Age_at_recruitment_env.0.0","Traffic_intensity_on_the_nearest_road_env.0.0",
+                                                                                                                             "Body_mass_index_(BMI)_env.0.0","Traffic_intensity_on_the_nearest_major_road_env.0.0", "Total_traffic_load_on_major_roads_env.0.0"), as.numeric)
+
+#str(my_data)
+#View(comorbidities)
+my_data = my_data %>% select (-c(Diabetes_diagnosis_bio.0.0))
+
+
+
+# Looking at the individuals that have more than 25% missingness 
+
+
+
+data_rows= my_data %>% select (-c("date_recr", "date_diagnosis","date_death", "time_to_diagnosis", "Date_lost_to_follow-up.0.0")) %>%
+  select(-which(sapply(names(my_data), grepl, pattern = "NMR")))
+
+
+
+# calculate the percentage missing value for each row
+
+na_counts <- apply(is.na(data_rows), 1, sum)
+
+
+# filter the dataframe to keep only the rows with more NAs in at least 25% of the columns
+thresh <- ncol(data_rows) * 0.25  # calculate the threshold for 25% of columns
+result <- my_data[na_counts >= thresh, ]
+
+
+
+
+result2 <- anti_join(my_data, result, by = colnames(my_data))
+
+
+#print the result
+nrow(result2)
+ 
+missing_values <- colSums(is.na(result2))
+ 
+percent_missing <- round(missing_values/297361 * 100, 2)
+
+#Display the result
+missing_data_percent <- data.frame(Percent_of_Missing_data = sort(percent_missing, decreasing = TRUE))
+ View(missing_data_percent)
+
+# Merging the comorbidities columns (they are added as binary variables)
+
+com_cols <- comorbidities %>% 
+  select(starts_with("com"))
+com_cols$eid = comorbidities$eid
+result2 <- merge(result2 , com_cols, by = "eid")
+
+# Working with result 2 to prepare the data frame we want to impute
+
+
+df_to_impute = result2
+
+# removing NMR variables and dates from df_to_impute
+df_to_impute = df_to_impute%>% select (-c("date_recr", "date_diagnosis","date_death", "time_to_diagnosis", `Date_lost_to_follow-up.0.0`))
+
+df_to_impute = df_to_impute %>%  select(-which(sapply(names(df_to_impute), grepl, pattern = "NMR")))
+
+# removing numerical/factors that will be banded but have NAs
+df_to_impute = df_to_impute %>% select (- c(`Number_of_days/week_of_moderate_physical_activity_10+_minutes_.0.0`, Maternal_smoking_around_birth_env.0.0, MealsAndAlc_env.0.0, Alcohol_intake_versus_10_years_previously_env.0.0 , Alcohol_env.0.0, smokers_in_household_env.0.0, Past_tobacco_smoking.0.0, Time_spent_outdoors_in_winter.0.0, Time_spend_outdoors_in_summer.0.0, `Frequency_of_friend/family_visits.0.0`, Sleep_duration_env.0.0, diet_variation_env.0.0, Ethnic_background_env.0.0, Country_of_birth_env.0.0, Smoking_status_env.0.0, Ever_smoked_env.0.0, Current_tobacco_smoking_env.0.0 ))
+
+df_to_impute$com_has_t2d[is.na(df_to_impute$com_has_t2d)] <- 0
+
+write.csv(df_to_impute, file = '/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/imputation/df_all_numeric.csv')
+
+
+# Banding the categorical variables
+
+
+#str(result2)
+result2$physical_activity_level <- cut(as.numeric(result2$`Number_of_days/week_of_moderate_physical_activity_10+_minutes_.0.0`), breaks = c(0, 1, 4, 7), labels = c("Low", "Moderate", "High"))
+
+
+result2$time_summer_outdoors_level <- cut(as.numeric(result2$Time_spend_outdoors_in_summer.0.0), breaks = c(0, 3, 8, 20), labels = c("Low", "Moderate", "High"))
+#plot(result2$time_summer_outdoors_level)
+
+result2$time_winter_outdoors_level <- cut(as.numeric(result2$Time_spent_outdoors_in_winter.0.0), breaks = c(0, 3, 8, 24), labels = c("Low", "Moderate", "High"))
+
+
+result2$sleep_level <- cut(as.numeric(result2$Sleep_duration_env.0.0), breaks = c(0, 5, 8, 24), labels = c("0-5", "6-8", "9-24"))
+#plot(result2$alcohol_level)
+
+result2$alcohol_level <- cut(as.numeric(result2$Alcohol_env.0.0), breaks = c(0, 2, 4, 6), labels = c("0-2", "3-4", "5-6"))
+
+result2$frequency_visits <- cut(as.numeric(result2$`Frequency_of_friend/family_visits.0.0`), breaks = c(1, 2, 3, 5, 7), labels = c("Very frequent", "Once a week", "Rarely", "Never"))
+
+result2$smokers_in_household <- cut(as.numeric(result2$smokers_in_household_env.0.0), breaks = c(0,1, 3), labels = c("Nobody smokes", "At least one person smokes"))
+
+result2$diet_variation <- cut(as.numeric(result2$diet_variation_env.0.0), breaks = c(0,1, 4), labels = c("Never", "Sometimes/Often"))
+
+
+
+result2 = result2 %>% select (-c("Number_of_days/week_of_moderate_physical_activity_10+_minutes_.0.0","Time_spend_outdoors_in_summer.0.0" , "Time_spent_outdoors_in_winter.0.0", "Sleep_duration_env.0.0", "Alcohol_env.0.0", `Frequency_of_friend/family_visits.0.0`, smokers_in_household_env.0.0, diet_variation_env.0.0))
+
+table(result2$Ethnic_background_env.0.0)
+result2<- result2 %>% mutate(Ethnic_background = recode(Ethnic_background_env.0.0, `1` = "White",`1001` = "White",`1003` = "White",`1002` = "White",`2` = "Mixed",`2001` = "Mixed",`2002` = "Mixed", `2003` = "Mixed",
+                                                        `2004` = "Mixed",`3001` = "Asian", `3002` = "Asian", `3` = "Asian",`3003` = "Asian", `3004` = "Asian", 
+                                                        `5` = "Asian", `4002` = "Black", `4003` = "Black",  `4` = "Black", `4001` = "Black", `6` = "Other"))
+
+
+# Creating the final dataset
+
+
+library(readr)
+df_all_numeric_imputed <- read_csv("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/imputation/df_all_numeric_imputed.csv")
+
+df_all_numeric_imputed = df_all_numeric_imputed %>% select (-c(`Unnamed: 0`))
+
+
+#Merging the columns from the other dataframe
+merged_df <- merge(result2[,c("eid", "date_recr", "date_diagnosis","date_death", "time_to_diagnosis", "Date_lost_to_follow-up.0.0")], df_all_numeric_imputed, by = "eid")
+
+# adding numerical/factors that will be banded but have NAs
+merged2_df = merge(merged_df, result2 [,c("eid","physical_activity_level", "Maternal_smoking_around_birth_env.0.0", "MealsAndAlc_env.0.0", "Alcohol_intake_versus_10_years_previously_env.0.0" , "alcohol_level", "smokers_in_household", "Past_tobacco_smoking.0.0", "time_winter_outdoors_level","time_summer_outdoors_level", "frequency_visits", "sleep_level", "diet_variation", "Ethnic_background", "Country_of_birth_env.0.0", "Smoking_status_env.0.0", "Ever_smoked_env.0.0", "Current_tobacco_smoking_env.0.0" ) ], by = "eid") 
+
+# adding the NMR variables
+cols_to_select <- grep("NMR", names(result2), value = TRUE)
+
+# merge the two dataframes based on column A
+merged2_df <- merge(merged2_df, result2[, c("eid", cols_to_select)], by = "eid")
+
+
+
+# we want to make the columns eid and case the first ones#
+# select the columns you want to move to the front and create a new dataframe with them
+
+cols_to_move <- c("eid", "case", "prevalent_case", "incident_case", "Sex.0.0","Body_mass_index_(BMI)_env.0.0", "Age_at_recruitment_env.0.0" )
+
+#merged_df <- merge(result2[,c("eid", "case", "prevalent_case", "incident_case", "Sex.0.0","Body_mass_index_(BMI)_env.0.0", "Age_at_recruitment_env.0.0")], merged2_df, by = "eid", "case", "prevalent_case", "incident_case", "Sex.0.0","Body_mass_index_(BMI)_env.0.0", "Age_at_recruitment_env.0.0")
+merged_df <- merged2_df[, c(cols_to_move, setdiff(names(merged2_df), cols_to_move))]
+
+
+
+
+# calculating the final Blood pressure
+cleaned_df <- merged_df%>%
+  mutate(MAP = `Diastolic_blood_pressure,_automated_reading_diag.0.0` +
+           (`Systolic_blood_pressure,_automated_reading_diag.0.0` -
+              `Diastolic_blood_pressure,_automated_reading_diag.0.0`)/3)
+
+
+### remvoing highly correlated variables###
+ 
+###creating heatmap to identify highly correlated varaibles 
+# Assuming you have the cleaned_df dataframe and have installed the gplots package
+library(ggplot2)
+#making heatmap ready data frame 
+ 
+##removing non-numeric data 
+heatmap_df = cleaned_df %>% select (-c("eid","case","incident_case","Age_at_recruitment_env.0.0",
+                                       "date_recr","date_diagnosis","date_death","time_to_diagnosis",
+                                       "Date_lost_to_follow-up.0.0"))
+#removing NMR variables 
+heatmap_df = heatmap_df[, !grepl("NMR", names(heatmap_df))]
+
+# Convert factor variables to numeric in heatmap_df
+heatmap_df <- as.data.frame(sapply(heatmap_df, function(x) if(is.factor(x)) as.numeric(as.character(x)) else x))
+#converting to numeric 
+# Convert character variables to numeric in heatmap_df
+heatmap_df <- as.data.frame(sapply(heatmap_df, function(x) as.numeric(as.character(x))))
+
+
+# Assuming you have the cleaned_df dataframe
+str(heatmap_df)
+# Create a correlation matrix
+corr_matrix <- cor(heatmap_df)
+
+
+heatmap(corr_matrix, Rowv = NA, Colv = NA, col = colorRampPalette(c("blue", "white", "red"))(100))
+
+
+
+# so we kept the variables that are measured in 2010, for the percentage buffer we considered for water and natural environment 1000 as we need to consider a larger space, thus removed the 300m. 
+# For domestic garden we kep the 300 m because 1000m would be less specifc
+cleaned_df = cleaned_df %>% select(-c( `Greenspace_percentage,_buffer_300m_env.0.0`, `Greenspace_percentage,_buffer_1000m_env.0.0`, `Water_percentage,_buffer_300m_env.0.0`, `Greenspace_percentage,_buffer_300m_env.0.0`,`Domestic_garden_percentage,_buffer_1000m_env.0.0`, `Natural_environment_percentage,_buffer_300m_env.0.0`, `Water_percentage,_buffer_300m_env.0.0`))
+
+cleaned_df = cleaned_df %>% select (-c(`Mean_corpuscular_volume_bio.0.0`,`Mean_platelet_(thrombocyte)_volume_bio.0.0`, Nucleated_red_blood_cell_count_bio.0.0,Mean_reticulocyte_volume_bio.0.0, Mean_sphered_cell_volume_bio.0.0, High_light_scatter_reticulocyte_count_bio.0.0)) 
+
+cleaned_df = cleaned_df %>% select (-c(bio_blood_Apolipoprotein_A.0.0, bio_blood_Apolipoprotein_B_bio.0.0, bio_blood_Cholesterol.0.0, bio_blood_Direct_bilirubin.0.0, bio_blood_Aspartate_aminotransferase.0.0))
+
+cleaned_df = cleaned_df  %>% select(-c("Systolic_blood_pressure,_automated_reading_diag.0.1", "Diastolic_blood_pressure,_automated_reading_diag.0.1", "Diastolic_blood_pressure,_automated_reading_diag.0.0", "Systolic_blood_pressure,_automated_reading_diag.0.0"))
+
+
+cleaned_df = cleaned_df  %>% select(-c(Average_evening_sound_level_of_noise_pollution_env.0.0, Average_daytime_sound_level_of_noise_pollution_env.0.0, Sum_of_road_length_of_major_roads_within_100m_env.0.0))
+
+cleaned_df = cleaned_df  %>% select(-c(Inverse_distance_to_the_nearest_major_road_env.0.0, Traffic_intensity_on_the_nearest_major_road_env.0.0))
+
+
+
+
+# converting the NAs in factors to unknown
+
+
+cleaned2_df <- cleaned_df %>%
+  mutate_if(is.factor, function(x) { ifelse(is.na(x), "Unknown", x)} )
+
+# recpnvert to the correct data type
+cleaned2_df <- cleaned2_df %>% mutate_at(vars("case", "prevalent_case", "incident_case", "Sex.0.0", "frequency_visits","Current_tobacco_smoking_env.0.0", "Past_tobacco_smoking.0.0","smokers_in_household","diet_variation","MealsAndAlc_env.0.0","Alcohol_intake_versus_10_years_previously_env.0.0","Country_of_birth_env.0.0","Maternal_smoking_around_birth_env.0.0","Smoking_status_env.0.0","Ever_smoked_env.0.0","Close_to_major_road_env.0.0", "physical_activity_level", "time_summer_outdoors_level", "time_winter_outdoors_level", "sleep_level", "alcohol_level", "Ethnic_background","com_has_AF" , "com_has_migraine","com_has_t1d","com_has_t2d"  ,"com_has_ckd","com_has_RA","com_has_sle","com_has_psychiatric" ,"com_has_ED" , "com_herit_CAD" ,"com_antipsychotic","com_steroid" ,"com_lipid_lowering" ,"com_bp" ),as.factor)
+
+
+
+cleaned_df = cleaned2_df
+table(result2$com_bp)
+#table(result2$com_lipid_lowering, result2$eid)
+part = result2$eid [ ]
+
+participants <- comorbidities[comorbidities$com_lipid_lowering == "1", "eid"]
+participants = lapply (participants, as.numeric)
+count <- sum(participants %in% result2$eid)
+count
+
+
+
+
+
+# Adding the dash score column to the dataframe
+
+Diet_data <- readRDS("/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/Diet_data.RDS")
+
+Diet_data = Diet_data %>% select (-c("fruit", "lowfat.dairy", "processed.red.meat", "vegetables", "whole.grain"))
+
+cleaned_df = Diet_data
+
+
+#data$physical_activity_level = data$physical_activity_level_env
+cleaned_df <- rename(cleaned_df, PRS_bio = PRS, physical_activity_level_env = physical_activity_level,
+                     BMI_bio = 'Body_mass_index_(BMI)_env.0.0',
+                     age_conf = Age_at_recruitment_env.0.0, sex_conf =Sex.0.0, 
+                     alcohol_level_env = alcohol_level,smokers_in_household_env = smokers_in_household,
+                     MAP_bio = MAP, Ethnic_background_bio = Ethnic_background, 
+                     diet_variation_env = diet_variation,  sleep_level_env =sleep_level,
+                     frequency_visits_env = frequency_visits,  
+                     time_summer_outdoors_level_env = time_summer_outdoors_level, 
+                     time_winter_outdoors_level_env= time_winter_outdoors_level, 
+                     Past_tobacco_smoking_env = Past_tobacco_smoking.0.0,  
+                     smokers_in_household_env = smokers_in_household, dash_env = dash)
+
+names(cleaned_df) <- gsub(".0.0", "", names(cleaned_df))
+names(cleaned_df) <- gsub(";|,", "", names(cleaned_df))
+saveRDS(cleaned_df, file ="/rds/general/project/hda-22-23/live/TDS/Group3_Temporary/cleaned_df.RDS" )
