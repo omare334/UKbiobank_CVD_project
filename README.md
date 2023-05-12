@@ -8,11 +8,11 @@ This repo compiles all the code used for the analysis of 300,000 UK Biobank part
 </div>
 
 ## pre-processing 
-This code was used to process data . 
-preprocessing_data was used to deal with the missingess of the data and removing and adjusting
+/This code was used to process data . 
+/preprocessing_data was used to deal with the missingess of the data and removing and adjusting
 the cases and comorbidities
-data_to_impute is used to set the data up for imputation
-add_dash add dash score to the data 
+/data_to_impute is used to set the data up for imputation
+/add_dash add dash score to the data 
 Comorbidities 
 imputed_all_numeric_proper.py is used to actually impute the data 
 ## univariate analysis 
